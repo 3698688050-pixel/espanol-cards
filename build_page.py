@@ -138,6 +138,43 @@ button{font:inherit}
 .rows .r-ok{width:6px;height:6px;border-radius:50%;background:var(--ok);
   display:inline-block;margin-right:6px;vertical-align:middle}
 .empty{padding:20px 0;color:var(--ink-3);font-size:13.5px}
+/* ── 下方信息区：补足页面下半部分的视觉重量 ── */
+.panel{margin:18px 0 0;padding:16px 0 0;border-top:1px solid var(--line-2)}
+.panel h2{font-size:12px;font-weight:400;color:var(--ink-3);margin:0 0 12px;letter-spacing:.01em}
+
+/* 进度环 + 一句话 */
+.ring-row{display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center}
+.ring{position:relative;width:74px;height:74px;flex:none}
+.ring svg{display:block;transform:rotate(-90deg)}
+.ring .track{stroke:var(--line);stroke-width:5;fill:none}
+.ring .fill{stroke:var(--violet);stroke-width:5;fill:none;stroke-linecap:round;
+  transition:stroke-dashoffset .5s cubic-bezier(.16,1,.3,1)}
+.ring .num{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:16px;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.ring-txt{min-width:0}
+.ring-txt .big{font-size:15px;color:var(--ink);margin:0 0 3px}
+.ring-txt .small{font-size:12.5px;color:var(--ink-3);margin:0;line-height:1.5}
+
+/* 场景分布：横向小条，一眼看偏科 */
+.bars{display:grid;gap:9px}
+.bars .b{display:grid;grid-template-columns:4.6em 1fr auto;gap:9px;align-items:center;
+  font-size:12px}
+.bars .b .name{color:var(--ink-2)}
+.bars .b .track{height:5px;background:var(--line-2);border-radius:3px;overflow:hidden}
+.bars .b .track i{display:block;height:5px;background:var(--violet);border-radius:3px}
+.bars .b .v{color:var(--ink-3);font-variant-numeric:tabular-nums;font-size:11.5px;
+  min-width:3.4em;text-align:right}
+
+/* 今日：三个小读数 + 一条迷你轨迹 */
+.today-row{display:flex;gap:22px;margin:0 0 10px}
+.today-row div{display:flex;flex-direction:column;gap:1px}
+.today-row .k{font-size:11.5px;color:var(--ink-3)}
+.today-row .v{font-size:17px;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.spark{display:flex;align-items:flex-end;gap:4px;height:26px;margin-top:2px}
+.spark i{flex:1;background:var(--line);border-radius:1px 1px 0 0;min-height:2px}
+.spark i.on{background:var(--violet)}
+.spark-days{display:flex;gap:4px;margin-top:4px}
+.spark-days span{flex:1;text-align:center;font-size:9.5px;color:var(--ink-3)}
 """
 
 BODY = """<div class="wrap">
@@ -168,6 +205,40 @@ BODY = """<div class="wrap">
           &nbsp;·&nbsp;
           <button class="linkish" id="reset">清空进度</button>
         </span>
+      </div>
+
+      <div class="panel">
+        <h2>进度</h2>
+        <div class="ring-row">
+          <div class="ring" id="ring" role="img" aria-label="掌握进度">
+            <svg width="74" height="74" viewBox="0 0 74 74" aria-hidden="true">
+              <circle class="track" cx="37" cy="37" r="32"/>
+              <circle class="fill" id="ringFill" cx="37" cy="37" r="32"
+                      stroke-dasharray="201" stroke-dashoffset="201"/>
+            </svg>
+            <span class="num" id="ringNum">0%</span>
+          </div>
+          <div class="ring-txt">
+            <p class="big" id="ringBig">还没开始</p>
+            <p class="small" id="ringSmall">标记已掌握的词会算进这里。</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>场景分布</h2>
+        <div class="bars" id="bars"></div>
+      </div>
+
+      <div class="panel">
+        <h2>今天</h2>
+        <div class="today-row">
+          <div><span class="k">翻过</span><span class="v" id="tSeen">0</span></div>
+          <div><span class="k">新掌握</span><span class="v" id="tKnown">0</span></div>
+          <div><span class="k">连续</span><span class="v" id="tStreak">0</span></div>
+        </div>
+        <div class="spark" id="spark" aria-label="近七天翻过的词数"></div>
+        <div class="spark-days" id="sparkDays"></div>
       </div>
     </section>
 
@@ -206,6 +277,26 @@ JS = """
   const current = () => { const d = deck(); return d[Math.min(state.idx, d.length - 1)] || d[0]; };
   const isFlipped = () => $('card').dataset.flipped === 'true';
 
+  /* ── 今日痕迹：本地记录，不依赖云端 ── */
+  const DAY_KEY = STORE_KEY + ':days';
+  function todayStr() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' +
+           String(d.getDate()).padStart(2,'0');
+  }
+  function readDays() {
+    try { return JSON.parse(localStorage.getItem(DAY_KEY) || '{}'); } catch (e) { return {}; }
+  }
+  function touchDay() {
+    const d = readDays(), k = todayStr();
+    d[k] = d[k] || { seen: {}, known: 0 };
+    localStorage.setItem(DAY_KEY, JSON.stringify(d));
+    return d[k];
+  }
+  function markSeen(id) { const t = touchDay(); t.seen[id] = 1;
+    localStorage.setItem(DAY_KEY, JSON.stringify(readDays())); }
+
+
   /* 范围胶囊 */
   function renderScopes() {
     const chip = (key, label, n) => `<button class="pill" data-s="${key}"
@@ -218,6 +309,74 @@ JS = """
   function setScope(s) {
     state.scope = s; state.idx = 0; save();
     renderScopes(); renderCard(); renderRows();
+  }
+
+
+  /* ── 下方三块面板 ── */
+  function renderPanels() {
+    const d = deck();
+    const done = d.filter(t => state.mastered[t.id]).length;
+    const pct = d.length ? Math.round(done / d.length * 100) : 0;
+
+    // 进度环
+    const C = 2 * Math.PI * 32;
+    const fill = $('ringFill');
+    fill.setAttribute('stroke-dasharray', C.toFixed(1));
+    fill.setAttribute('stroke-dashoffset', (C * (1 - done / (d.length || 1))).toFixed(1));
+    $('ringNum').textContent = pct + '%';
+    $('ringBig').textContent = done === 0 ? '还没开始'
+      : done === d.length ? '这个范围全掌握了' : `已掌握 ${done} 个`;
+    $('ringSmall').textContent = done === 0
+      ? '标记已掌握的词会算进这里。'
+      : `还剩 ${d.length - done} 个没标记，${pct}% 完成。`;
+
+    // 场景分布
+    const byScene = {};
+    TERMS.forEach(t => {
+      byScene[t.scene] = byScene[t.scene] || { total: 0, done: 0, label: t.sceneLabel };
+      byScene[t.scene].total++;
+      if (state.mastered[t.id]) byScene[t.scene].done++;
+    });
+    $('bars').innerHTML = Object.keys(byScene).map(k => {
+      const v = byScene[k];
+      const w = v.total ? (v.done / v.total * 100) : 0;
+      return `<div class="b">
+        <span class="name">${esc(v.label.split(' · ')[0])}</span>
+        <span class="track"><i style="width:${w.toFixed(1)}%"></i></span>
+        <span class="v">${v.done}/${v.total}</span>
+      </div>`;
+    }).join('');
+
+    // 今日
+    const days = readDays();
+    const td = days[todayStr()] || { seen: {}, known: 0 };
+    $('tSeen').textContent = Object.keys(td.seen || {}).length;
+    $('tKnown').textContent = td.known || 0;
+
+    const keys = [];
+    for (let i = 6; i >= 0; i--) {
+      const x = new Date(); x.setDate(x.getDate() - i);
+      keys.push(x.getFullYear() + '-' + String(x.getMonth()+1).padStart(2,'0') + '-' + String(x.getDate()).padStart(2,'0'));
+    }
+    const counts = keys.map(k => Object.keys((days[k] || {}).seen || {}).length);
+    const max = Math.max(1, ...counts);
+    $('spark').innerHTML = counts.map((n, i) => {
+      const h = n ? Math.max(3, Math.round(n / max * 26)) : 2;
+      return `<i class="${n ? 'on' : ''}" style="height:${h}px" title="${keys[i]} ${n} 个"></i>`;
+    }).join('');
+    $('sparkDays').innerHTML = keys.map(k => `<span>${k.slice(8)}</span>`).join('');
+
+    // 连续天数
+    let streak = 0;
+    for (let i = 0; i < 400; i++) {
+      const x = new Date(); x.setDate(x.getDate() - i);
+      const k = x.getFullYear() + '-' + String(x.getMonth()+1).padStart(2,'0') + '-' + String(x.getDate()).padStart(2,'0');
+      const has = Object.keys((days[k] || {}).seen || {}).length > 0;
+      if (has) streak++;
+      else if (i === 0) continue;      // 今天还没背，不算断
+      else break;
+    }
+    $('tStreak').textContent = streak;
   }
 
   /* 卡片 */
@@ -258,9 +417,12 @@ JS = """
     $('card').setAttribute('aria-label', isFlipped()
       ? `${t.zh}，西语 ${t.es}。按空格翻回`
       : `${t.zh}，${t.sceneLabel}。按空格翻面看西语`);
+
+    renderPanels();
   }
 
   function setFlip(on) {
+    if (on) markSeen(current().id);
     $('card').dataset.flipped = String(on);
     $('card').setAttribute('aria-pressed', String(on));
     renderCard();
@@ -296,7 +458,8 @@ JS = """
     const t = current();
     const was = !!state.mastered[t.id];
     if (was) delete state.mastered[t.id];
-    else state.mastered[t.id] = Date.now();
+    else { state.mastered[t.id] = Date.now(); const td = touchDay(); td.known = (td.known || 0) + 1;
+           localStorage.setItem(DAY_KEY, JSON.stringify(readDays())); }
     save(); renderCard(); renderRows();
     if (!was) goNextUnmastered();
   });
