@@ -266,7 +266,12 @@ button{font:inherit}
   function load() {
     try {
       const raw = JSON.parse(localStorage.getItem(STORE_KEY) || 'null') || {};
-      return { scope: raw.scope || 'all', idx: Math.max(0, raw.idx | 0),
+      // v1 用的是中文场景名（日常/出行…），v2 改成英文 key；
+      // 存的 scope 在新版里不存在时退回「全部」，避免 deck 为空
+      let scope = raw.scope || 'all';
+      const keys = new Set(TERMS.map(t => t.scene));
+      if (scope !== 'all' && !keys.has(scope)) scope = 'all';
+      return { scope, idx: Math.max(0, raw.idx | 0),
                mastered: raw.mastered && typeof raw.mastered === 'object' ? raw.mastered : {} };
     } catch (e) { return { scope: 'all', idx: 0, mastered: {} }; }
   }
@@ -274,7 +279,11 @@ button{font:inherit}
   const save = () => localStorage.setItem(STORE_KEY, JSON.stringify(state));
 
   const deck = () => state.scope === 'all' ? TERMS : TERMS.filter(t => t.scene === state.scope);
-  const current = () => { const d = deck(); return d[Math.min(state.idx, d.length - 1)] || d[0]; };
+  const current = () => {
+    const d = deck();
+    if (!d.length) { state.scope = 'all'; return deck()[Math.min(state.idx, TERMS.length - 1)]; }
+    return d[Math.min(state.idx, d.length - 1)] || d[0];
+  };
   const isFlipped = () => $('card').dataset.flipped === 'true';
 
   /* ── 今日痕迹：本地记录，不依赖云端 ── */
@@ -381,7 +390,8 @@ button{font:inherit}
 
   /* 卡片 */
   function renderCard() {
-    const t = current(); if (!t) return;
+    const t = current();
+    if (!t || !TERMS.length) return;
     const d = deck(), pos = Math.min(state.idx, d.length - 1) + 1;
     const on = !!state.mastered[t.id];
 
